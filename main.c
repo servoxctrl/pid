@@ -100,7 +100,7 @@ int main(void)
     /* Reset encoder count to midpoint of TIM2 period
      * so that reverse motion (negative direction) counts
      * downward from midpoint instead of wrapping around */
-    __HAL_TIM_SET_COUNTER(&htim2, (ROTATION_COUNTS * DAC_MAX) / 2);
+    __HAL_TIM_SET_COUNTER(&htim2, 500000);
 
     uint16_t lut_index  = 0;        /* current setpoint index in LUT */
     int32_t  setpoint   = 0;        /* current setpoint value 0–4095 */
@@ -118,7 +118,7 @@ int main(void)
          *    the reset midpoint correctly read as smaller values.
          *    Divide by ROTATION_COUNTS to scale to 0–4095 range.
          * ------------------------------------------------------------------ */
-        position = (int32_t)(__HAL_TIM_GET_COUNTER(&htim2)) / ROTATION_COUNTS;
+        position = ((int32_t)(__HAL_TIM_GET_COUNTER(&htim2) - 500000)) / ROTATION_COUNTS + DAC_MIDPOINT;
 
         /* Clamp position to valid DAC range in case of overshoot */
         position = clamp(position, DAC_MIN, DAC_MAX);
@@ -262,7 +262,7 @@ static void MX_TIM2_Init(void)
     htim2.Instance               = TIM2;
     htim2.Init.Prescaler         = 0;
     htim2.Init.CounterMode       = TIM_COUNTERMODE_UP;
-    htim2.Init.Period            = ROTATION_COUNTS * DAC_MAX; /* full stroke */
+    htim2.Init.Period            = 1000000; /* large period to avoid wrap */
     htim2.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
     htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
