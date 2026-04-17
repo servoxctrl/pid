@@ -5,6 +5,7 @@
  *
  * Hardware:
  *   - STM32 (HAL-based)
+ *   - Linear actuator with configurable stroke length (default 30cm)
  *   - Quadrature encoder on TIM2 (A→PA0, B→PA1)
  *   - 12-bit DAC output on DAC_CHANNEL_1 (PA4)
  *   - DAC output drives actuator amplifier (0–4095 = 0–3.3V)
@@ -27,11 +28,17 @@ DAC_HandleTypeDef hdac;
 TIM_HandleTypeDef htim2;
 
 /* -----------------------------------------------------------------------
- * Encoder scaling
- *   rotation: number of encoder counts per full actuator stroke
- *   TIM2 period = rotation * 4095 so CNT stays in range
+ * Actuator and encoder parameters
  * ----------------------------------------------------------------------- */
-#define ROTATION_COUNTS     10      /* encoder counts per full stroke */
+#define STROKE_LENGTH_CM    30          /* actuator stroke length in cm */
+#define SCREW_PITCH_MM      5           /* screw pitch in mm per rotation */
+#define ENCODER_CPR         4000        /* encoder counts per rotation (quadrature) */
+
+/* -----------------------------------------------------------------------
+ * Encoder scaling
+ *   ROTATION_COUNTS = (stroke_mm / pitch_mm) * CPR
+ * ----------------------------------------------------------------------- */
+#define ROTATION_COUNTS     ((STROKE_LENGTH_CM * 10 * ENCODER_CPR) / SCREW_PITCH_MM)  /* encoder counts per full stroke */
 #define DAC_MIDPOINT        2048    /* DAC value = zero actuator force */
 #define DAC_MAX             4095
 #define DAC_MIN             0
@@ -97,10 +104,8 @@ int main(void)
     /* Start DAC output */
     HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
 
-    /* Reset encoder count to midpoint of TIM2 period
-     * so that reverse motion (negative direction) counts
-     * downward from midpoint instead of wrapping around */
-    __HAL_TIM_SET_COUNTER(&htim2, 500000);
+    /* Reset encoder count to start of stroke */
+    __HAL_TIM_SET_COUNTER(&htim2, 0);
 
     uint16_t lut_index  = 0;        /* current setpoint index in LUT */
     int32_t  setpoint   = 0;        /* current setpoint value 0–4095 */
@@ -114,11 +119,9 @@ int main(void)
     {
         /* ------------------------------------------------------------------
          * 1. Read encoder
-         *    TIM2->CNT is uint32. Cast to int32 so that counts below
-         *    the reset midpoint correctly read as smaller values.
-         *    Divide by ROTATION_COUNTS to scale to 0–4095 range.
+         *    Scale counter to 0–4095 range for full stroke.
          * ------------------------------------------------------------------ */
-        position = ((int32_t)(__HAL_TIM_GET_COUNTER(&htim2) - 500000)) / ROTATION_COUNTS + DAC_MIDPOINT;
+        position = ((int32_t)(__HAL_TIM_GET_COUNTER(&htim2)) * (int64_t)DAC_MAX) / ROTATION_COUNTS;
 
         /* Clamp position to valid DAC range in case of overshoot */
         position = clamp(position, DAC_MIN, DAC_MAX);
@@ -251,7 +254,7 @@ static void MX_DAC_Init(void)
 /* -----------------------------------------------------------------------
  * MX_TIM2_Init
  * TIM2 in quadrature encoder mode (TI12 — both A and B channels)
- * Period = ROTATION_COUNTS * DAC_MAX = full stroke range
+ * Period = large value to avoid wrap
  * Encoder input: PA0 (CH1/A), PA1 (CH2/B)
  * ----------------------------------------------------------------------- */
 static void MX_TIM2_Init(void)
@@ -262,7 +265,7 @@ static void MX_TIM2_Init(void)
     htim2.Instance               = TIM2;
     htim2.Init.Prescaler         = 0;
     htim2.Init.CounterMode       = TIM_COUNTERMODE_UP;
-    htim2.Init.Period            = 1000000; /* large period to avoid wrap */
+    htim2.Init.Period            = 500000; /* large period to avoid wrap */
     htim2.Init.ClockDivision     = TIM_CLOCKDIVISION_DIV1;
     htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
