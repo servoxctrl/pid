@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linear Actuator PD Simulator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Courier New',monospace;font-size:13px;background:#0f0f0f;color:#e0e0e0;padding:16px;min-height:100vh}
+h1{font-size:14px;font-weight:700;letter-spacing:.1em;color:#aaa;text-transform:uppercase;margin-bottom:14px;border-bottom:1px solid #222;padding-bottom:8px}
+.panel{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.label{font-size:10px;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em}
+.stat-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.stat{background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:8px 12px;flex:1;min-width:100px}
+.stat .sv{font-size:20px;font-weight:700;color:#e0e0e0}
+.stat .sk{font-size:10px;color:#555;margin-bottom:2px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.param-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.param-row label{font-size:11px;color:#666;width:90px;flex-shrink:0}
+.param-row input[type=range]{flex:1;accent-color:#00ff88}
+.param-row .pv{font-size:12px;font-weight:700;min-width:52px;text-align:right;color:#00ff88}
+.btn{padding:10px 20px;border-radius:6px;border:1px solid #333;background:#1a1a1a;color:#ccc;cursor:pointer;font-family:'Courier New',monospace;font-size:13px;font-weight:700;width:100%;transition:all .15s;letter-spacing:.05em}
+.btn:hover:not(:disabled){background:#252525;border-color:#444}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn.primary{background:#003d1f;color:#00ff88;border-color:#00aa55}
+.btn.primary:hover:not(:disabled){background:#004d27}
+.btn.pause{background:#2a2000;color:#ffaa00;border-color:#aa6600}
+.btn.pause:hover:not(:disabled){background:#332800}
+.btn.danger{background:#3d0000;color:#ff4444;border-color:#aa0000}
+.btn.danger:hover:not(:disabled){background:#4d0000}
+.track-wrap{position:relative;height:48px;background:#111;border:1px solid #2a2a2a;border-radius:6px;overflow:hidden;margin-bottom:6px}
+.track{position:absolute;top:50%;left:5%;right:5%;height:4px;background:#222;transform:translateY(-50%);border-radius:2px}
+.center-mark{position:absolute;top:10%;left:50%;width:1px;height:80%;background:#333;transform:translateX(-50%)}
+.carriage{position:absolute;top:50%;width:20px;height:30px;border-radius:4px;transform:translate(-50%,-50%);transition:left .018s linear;box-shadow:0 0 8px currentColor}
+.fill-bar{position:absolute;top:50%;height:4px;transform:translateY(-50%);border-radius:2px;transition:all .018s linear;opacity:.6}
+.end-lbl{position:absolute;font-size:10px;color:#444;top:50%;transform:translateY(-50%)}
+canvas{width:100%;display:block}
+.state-idle{color:#555}
+.state-run{color:#00ff88;text-shadow:0 0 8px #00ff88}
+.state-pause{color:#ffaa00;text-shadow:0 0 8px #ffaa00}
+.state-return{color:#ffaa00;text-shadow:0 0 8px #ffaa00}
+.state-done{color:#4488ff;text-shadow:0 0 8px #4488ff}
+</style>
+</head>
+<body>
+<h1>Linear Actuator — PD Controller Simulator</h1>
+
+<div class="stat-row">
+  <div class="stat"><div class="sk">State</div><div class="sv state-idle" id="st-state">IDLE</div></div>
+  <div class="stat"><div class="sk">Feedback</div><div class="sv" id="st-pos" style="color:#ff8c00">0.0 mm</div></div>
+  <div class="stat"><div class="sk">Setpoint</div><div class="sv" id="st-sp" style="color:#00ff88">0.0 mm</div></div>
+  <div class="stat"><div class="sk">Error</div><div class="sv" id="st-dac">0.00 V</div></div>
+  <div class="stat"><div class="sk">Cycles</div><div class="sv" id="st-cyc">0 / 5</div></div>
+</div>
+
+<div class="panel">
+  <div class="label">Actuator  —  −150 mm ← HOME → +150 mm</div>
+  <div class="track-wrap">
+    <div class="track"></div>
+    <div class="center-mark"></div>
+    <div class="fill-bar" id="fill-bar"></div>
+    <div class="carriage" id="carriage" style="left:50%;color:#555;background:#333"></div>
+    <span class="end-lbl" style="left:4px">−150</span>
+    <span class="end-lbl" style="right:4px">+150</span>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="label">Feedback (mm) &amp; Setpoint (mm) &amp; Error (cts) — last 10 s</div>
+  <div style="position:relative;height:200px"><canvas id="chart"></canvas></div>
+</div>
+
+<div class="row2">
+  <div class="panel">
+    <div class="label">Parameters</div>
+    <div class="param-row"><label>Amplitude (V)</label><input type="range" id="p-amp" min="1" max="10" step="0.5" value="10"><span class="pv" id="pv-amp">10.0 V</span></div>
+    <div class="param-row"><label>Frequency</label><input type="range" id="p-freq" min="0" max="10" step="0.1" value="1"><span class="pv" id="pv-freq">1.0 Hz</span></div>
+    <div class="param-row"><label>Cycles</label><input type="range" id="p-cyc" min="1" max="200" step="1" value="5"><span class="pv" id="pv-cyc">5</span></div>
+    <div class="param-row"><label>KP</label><input type="range" id="p-kp" min="0.1" max="20" step="0.1" value="8"><span class="pv" id="pv-kp">8.0</span></div>
+    <div class="param-row"><label>KD</label><input type="range" id="p-kd" min="0" max="30" step="0.5" value="12"><span class="pv" id="pv-kd">12.0</span></div>
+    <div style="font-size:10px;color:#444;margin-top:2px">Locked while running</div>
+  </div>
+  <div class="panel">
+    <div class="label">Controls</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn primary" id="btn-start">▶  START</button>
+      <button class="btn pause"   id="btn-pause" disabled>⏸  PAUSE</button>
+      <button class="btn danger"  id="btn-stop"  disabled>■  STOP</button>
+    </div>
+    <div style="margin-top:14px;font-size:10px;color:#444;line-height:1.8">
+      Velocity-mode servo drive<br>
+      Inertia lag τ = 20 ms<br>
+      ENC ±5000 cts = ±150 mm<br>
+      1 ms control loop
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const ENC_HALF=5000,STROKE_MM=150,DAC_ZERO=2048,DAC_MAX=4095,DAC_MIN=0,DAC_HS=2048,HOME_DB=10;
+const MOTOR_GAIN=8000,DT=0.001,TAU=0.02;
+const STATE={IDLE:0,RUN:1,RETURN:2,DONE:3,PAUSE:4};
+const STATE_NAMES=["IDLE","RUNNING","RETURNING","DONE","PAUSED"];
+const STATE_CLASSES=["state-idle","state-run","state-return","state-done","state-pause"];
+const STATE_COLORS=["#555","#00ff88","#ffaa00","#4488ff","#ffaa00"];
+
+// LUT is now dynamic — rebuilt when freq or amp changes
+// At 0 Hz we output a constant (DC) at the amplitude level
+function buildLUT(av, freqHz){
+  const ac=(Math.min(10,Math.max(1,av))/10)*ENC_HALF;
+  if(freqHz<=0) return {pts:[Math.round(ac)], ticksPerCycle:1};
+  // ticks per cycle = 1000 / freqHz  (loop is 1kHz)
+  const ticksPerCycle = Math.max(1, Math.round(1000/freqHz));
+  const pts = Array.from({length:ticksPerCycle},(_,i)=>
+    Math.round(ac*Math.sin(2*Math.PI*i/ticksPerCycle))
+  );
+  return {pts, ticksPerCycle};
+}
+
+function clampDAC(v){return Math.max(DAC_MIN,Math.min(DAC_MAX,Math.round(v)));}
+function dacV(d){return(d-DAC_ZERO)/DAC_HS*10;}
+function toMM(c){return c/ENC_HALF*STROKE_MM;}
+
+let sim=null,raf=null,lastT=null,sTimer=0,paused=false;
+
+function mkSim(amp,freqHz,cyc,kp,kd){
+  const lut=buildLUT(amp,freqHz);
+  return{state:STATE.IDLE,li:0,cc:0,maxC:cyc,pe:0,lut,freqHz,kp,kd,pos:0,vel:0,dac:DAC_ZERO,t:0,err:0};
+}
+
+function pdStep(s,sp){
+  const ep=Math.round(s.pos),e=sp-ep,de=e-s.pe;
+  s.pe=e; s.err=e;
+  return clampDAC(DAC_ZERO+Math.round((s.kp*e+s.kd*de)*(DAC_HS/ENC_HALF)));
+}
+
+function stepCtrl(s){
+  const ep=Math.round(s.pos);
+  const lpts=s.lut.pts, llen=lpts.length;
+  switch(s.state){
+    case STATE.IDLE: s.dac=DAC_ZERO; s.err=0; break;
+    case STATE.RUN:
+      s.dac=pdStep(s, lpts[s.li % llen]);
+      s.li++;
+      if(s.li>=llen){
+        s.li=0; s.cc++;
+        if(s.cc>=s.maxC){s.state=STATE.RETURN;s.pe=0;}
+      }
+      break;
+    case STATE.RETURN:
+      s.dac=pdStep(s,0);
+      if(ep>-HOME_DB&&ep<HOME_DB){s.dac=DAC_ZERO;s.state=STATE.DONE;s.err=0;}
+      break;
+    case STATE.DONE: s.dac=DAC_ZERO; s.err=0; break;
+  }
+}
+
+function stepPlant(s){
+  const v=dacV(s.dac)*MOTOR_GAIN;
+  s.vel+=((v-s.vel)*DT/TAU);
+  s.pos+=s.vel*DT;
+  const lim=ENC_HALF*1.05;
+  if(s.pos>lim){s.pos=lim;s.vel=0;}
+  if(s.pos<-lim){s.pos=-lim;s.vel=0;}
+}
+
+const chart=new Chart(document.getElementById('chart'),{
+  type:'line',
+  data:{datasets:[
+    {label:'Setpoint (mm)',data:[],borderColor:'#00ff88',borderWidth:1.5,pointRadius:0,yAxisID:'mm'},
+    {label:'Feedback (mm)',data:[],borderColor:'#ff8c00',borderWidth:2,pointRadius:0,yAxisID:'mm'},
+    {label:'Error (cts)',data:[],borderColor:'#f87171',borderWidth:1,pointRadius:0,yAxisID:'err',borderDash:[3,3]},
+  ]},
+  options:{
+    responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
+    scales:{
+      x:{type:'linear',ticks:{font:{size:10},color:'#555',callback:v=>v.toFixed(1)+'s'},grid:{color:'rgba(255,255,255,.05)'}},
+      mm:{type:'linear',position:'left',min:-160,max:160,ticks:{font:{size:10},color:'#555'},grid:{color:'rgba(255,255,255,.05)'}},
+      err:{type:'linear',position:'right',min:-5200,max:5200,ticks:{font:{size:10},color:'#f87171'},grid:{display:false}},
+    },
+    plugins:{legend:{labels:{font:{size:11},color:'#666',boxWidth:12,padding:10}},tooltip:{enabled:false}},
+  }
+});
+
+const WINDOW_SEC=10,SAMPLE_DT=0.02;
+function pushData(t,sp,pos,err){
+  const tmin=t-WINDOW_SEC;
+  chart.data.datasets.forEach(d=>{while(d.data.length&&d.data[0].x<tmin)d.data.shift();});
+  chart.data.datasets[0].data.push({x:t,y:parseFloat(toMM(sp).toFixed(1))});
+  chart.data.datasets[1].data.push({x:t,y:parseFloat(toMM(pos).toFixed(1))});
+  chart.data.datasets[2].data.push({x:t,y:Math.round(err)});
+  chart.options.scales.x.min=t-WINDOW_SEC;
+  chart.options.scales.x.max=t;
+  chart.update('none');
+}
+
+function updateUI(s,isPaused){
+  const displayState=isPaused?STATE.PAUSE:s.state;
+  const col=STATE_COLORS[displayState];
+  const el=document.getElementById('st-state');
+  el.textContent=STATE_NAMES[displayState];
+  el.className='sv '+STATE_CLASSES[displayState];
+  document.getElementById('st-pos').textContent=toMM(s.pos).toFixed(1)+' mm';
+  const spIdx=Math.min(s.li, s.lut.pts.length-1);
+  document.getElementById('st-sp').textContent=toMM(s.state===STATE.RUN?s.lut.pts[spIdx]:0).toFixed(1)+' mm';
+  document.getElementById('st-dac').textContent=Math.round(s.err)+' cts';
+  document.getElementById('st-cyc').textContent=s.cc+' / '+s.maxC;
+  const frac=s.pos/ENC_HALF, pct=50+frac*45;
+  const car=document.getElementById('carriage');
+  car.style.left=pct.toFixed(2)+'%';
+  car.style.background=col; car.style.color=col;
+  const fb=document.getElementById('fill-bar');
+  if(frac>=0){fb.style.left='50%';fb.style.width=(frac*45).toFixed(2)+'%';fb.style.background='#00ff88';}
+  else{fb.style.left=(50+frac*45).toFixed(2)+'%';fb.style.width=(Math.abs(frac)*45).toFixed(2)+'%';fb.style.background='#ff4444';}
+}
+
+function setSliders(disabled){
+  ['p-amp','p-freq','p-cyc','p-kp','p-kd'].forEach(id=>document.getElementById(id).disabled=disabled);
+}
+
+function setBtns(running,isPaused,done){
+  const bs=document.getElementById('btn-start');
+  const bp=document.getElementById('btn-pause');
+  const bst=document.getElementById('btn-stop');
+  if(done){
+    bs.textContent='▶  START';bs.disabled=false;
+    bp.textContent='⏸  PAUSE';bp.disabled=true;
+    bst.disabled=true;
+    setSliders(false);
+  } else if(running&&!isPaused){
+    bs.textContent='▶  START';bs.disabled=true;
+    bp.textContent='⏸  PAUSE';bp.disabled=false;
+    bst.disabled=false;
+  } else if(isPaused){
+    bs.textContent='▶  RESUME';bs.disabled=false;
+    bp.textContent='⏸  PAUSE';bp.disabled=true;
+    bst.disabled=false;
+  } else {
+    bs.textContent='▶  START';bs.disabled=false;
+    bp.textContent='⏸  PAUSE';bp.disabled=true;
+    bst.disabled=true;
+  }
+}
+
+function mainLoop(ts){
+  if(!sim||paused)return;
+  if(lastT===null)lastT=ts;
+  let el=Math.min((ts-lastT)/1000,0.05);lastT=ts;
+  const steps=Math.max(1,Math.round(el/DT));
+  for(let i=0;i<steps;i++){
+    stepCtrl(sim);stepPlant(sim);sim.t+=DT;sTimer+=DT;
+    if(sTimer>=SAMPLE_DT){
+      sTimer=0;
+      const spIdx=Math.min(sim.li,sim.lut.pts.length-1);
+      const sp=sim.state===STATE.RUN?sim.lut.pts[spIdx]:0;
+      pushData(parseFloat(sim.t.toFixed(3)),sp,sim.pos,sim.err);
+    }
+  }
+  updateUI(sim,false);
+  if(sim.state!==STATE.DONE){
+    raf=requestAnimationFrame(mainLoop);
+  } else {
+    raf=null;
+    setBtns(false,false,true);
+  }
+}
+
+document.getElementById('btn-start').onclick=function(){
+  if(paused){
+    paused=false;
+    setBtns(true,false,false);
+    lastT=null;
+    raf=requestAnimationFrame(mainLoop);
+    return;
+  }
+  if(raf)cancelAnimationFrame(raf);
+  const amp=parseFloat(document.getElementById('p-amp').value);
+  const freq=parseFloat(document.getElementById('p-freq').value);
+  const cyc=parseInt(document.getElementById('p-cyc').value);
+  const kp=parseFloat(document.getElementById('p-kp').value);
+  const kd=parseFloat(document.getElementById('p-kd').value);
+  sim=mkSim(amp,freq,cyc,kp,kd);
+  sim.state=STATE.RUN;
+  chart.data.datasets.forEach(d=>d.data=[]);chart.update('none');
+  lastT=null;sTimer=0;paused=false;
+  setBtns(true,false,false);
+  setSliders(true);
+  raf=requestAnimationFrame(mainLoop);
+};
+
+document.getElementById('btn-pause').onclick=function(){
+  paused=true;
+  if(raf){cancelAnimationFrame(raf);raf=null;}
+  if(sim){sim.dac=DAC_ZERO;updateUI(sim,true);}
+  setBtns(true,true,false);
+};
+
+document.getElementById('btn-stop').onclick=function(){
+  paused=false;
+  if(raf){cancelAnimationFrame(raf);raf=null;}
+  if(sim){sim.state=STATE.RETURN;sim.pe=0;}
+  document.getElementById('btn-stop').disabled=true;
+  document.getElementById('btn-start').disabled=true;
+  document.getElementById('btn-pause').disabled=true;
+  lastT=null;
+  function returnLoop(ts){
+    if(!sim)return;
+    if(lastT===null)lastT=ts;
+    let el=Math.min((ts-lastT)/1000,0.05);lastT=ts;
+    const steps=Math.max(1,Math.round(el/DT));
+    for(let i=0;i<steps;i++){
+      stepCtrl(sim);stepPlant(sim);sim.t+=DT;sTimer+=DT;
+      if(sTimer>=SAMPLE_DT){sTimer=0;pushData(parseFloat(sim.t.toFixed(3)),0,sim.pos,sim.err);}
+    }
+    updateUI(sim,false);
+    if(sim.state!==STATE.DONE){raf=requestAnimationFrame(returnLoop);}
+    else{raf=null;setBtns(false,false,true);}
+  }
+  raf=requestAnimationFrame(returnLoop);
+};
+
+// Slider live readouts
+document.getElementById('p-amp').oninput=function(){document.getElementById('pv-amp').textContent=parseFloat(this.value).toFixed(1)+' V';};
+document.getElementById('p-freq').oninput=function(){
+  const v=parseFloat(this.value);
+  document.getElementById('pv-freq').textContent=(v===0?'DC':v.toFixed(1)+' Hz');
+};
+document.getElementById('p-cyc').oninput=function(){
+  document.getElementById('pv-cyc').textContent=this.value;
+  document.getElementById('st-cyc').textContent='0 / '+this.value;
+};
+document.getElementById('p-kp').oninput=function(){document.getElementById('pv-kp').textContent=parseFloat(this.value).toFixed(1);};
+document.getElementById('p-kd').oninput=function(){document.getElementById('pv-kd').textContent=parseFloat(this.value).toFixed(1);};
+</script>
+</body>
+</html>
