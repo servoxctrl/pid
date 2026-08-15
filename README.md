@@ -4,7 +4,8 @@
 <img src="doc/pid.png" alt="PID Controller Diagram" width="400">
 
 ### demo link
-https://youtu.be/ty8xQv0ohg8?si=NDRTQDqTo5Z_6vpp
+https://drive.google.com/file/d/1enGWCRSiMg9QykjCAUo2rQZK4gU8beZr/view?usp=drivesdk
+
 
 ### Simulation link (this is simple html file, download and run)
 - [Linear actuator simulation](doc/linear_actuator_sim.html)
