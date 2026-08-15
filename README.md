@@ -6,7 +6,7 @@
 ### demo link
 https://youtu.be/ty8xQv0ohg8?si=NDRTQDqTo5Z_6vpp
 
-### Simulation link
+### Simulation link (this is simple html file, download and run)
 - [Linear actuator simulation](doc/linear_actuator_sim.html)
 
 
