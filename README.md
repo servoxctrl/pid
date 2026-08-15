@@ -3,10 +3,10 @@
 
 <img src="doc/pid.png" alt="PID Controller Diagram" width="400">
 
-### demo link
+### Demo link
 https://drive.google.com/file/d/1FZPhWHV9YoGzKqAiwg6NA7byyW6UAll0/view?usp=drivesdk
 
-### Simulation link (this is simple html file, download and run)
+### Simulation link (this is simple html file, download and run, just for understanding)
 - [Linear actuator simulation](doc/linear_actuator_sim.html)
 
 
