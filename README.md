@@ -10,7 +10,7 @@ https://youtu.be/ty8xQv0ohg8?si=NDRTQDqTo5Z_6vpp
 - [Linear actuator simulation](doc/linear_actuator_sim.html)
 
 
-Here's a clean README description:
+
 
 ---
 
