@@ -1,4 +1,4 @@
-# pid_controller
+# PID controller
 
 
 <img src="doc/pid.png" alt="PID Controller Diagram" width="400">
@@ -31,4 +31,5 @@ Work in progress — actuator not reaching full stroke. Investigating.
 
 ---
 
-Short, clean, and honest about the current status. Just paste it into your README.md.
+## other link
+https://serial-studio.com/
